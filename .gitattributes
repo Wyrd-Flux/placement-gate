@@ -1,0 +1,14 @@
+# Normalise line endings in the repository. The package is pure Python and
+# nothing here is a shell script or a Windows-only data file, so LF everywhere
+# keeps the tree identical for every reviewer regardless of core.autocrlf.
+* text=auto eol=lf
+
+*.py    text diff=python
+*.md    text
+*.json  text
+*.toml  text
+*.in    text
+LICENSE text
+
+# Keep shell scripts executable and LF-terminated.
+*.sh    text eol=lf
