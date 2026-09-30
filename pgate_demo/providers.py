@@ -1,55 +1,47 @@
-"""Lazy provider resolution for the upstream Placement Gate capabilities.
+"""Providers for Placement Gate's evidence primitives.
 
-Two rules govern everything in this module.
+Everything Placement Gate needs now comes from ``wyrd-placement-core``, an
+ordinary installed dependency, so there is nothing to resolve and nothing to fail
+to resolve. This module is a thin compatibility seam over that package rather
+than a plugin system.
 
-1. **Named surfaces only.** Each capability names the exact upstream modules it
-   needs. Nothing here globs, walks, or enumerates a source tree. Importing
-   this module imports no upstream code at all.
+It exists for one reason: the reporting vocabulary. Every command reports which
+capability it used and whether it was available, and that shape is part of
+Placement Gate's contract — a command whose capability is missing must say so and
+exit non-zero rather than answer from a substitute.
 
-2. **Resolution is a read, never a probe.** A capability that cannot be
-   resolved is reported UNAVAILABLE. Veritas and Placement Gate never fall back
-   to a local reimplementation, and never touch the filesystem to find out
-   whether an import "might" work.
+Two rules this module keeps, because they were the point of the original:
+
+- **Resolution is by name, never by scanning.** No ``os.walk``, no ``pkgutil``, no
+  globbing. The dependency graph in ``pyproject.toml`` is the whole truth.
+- **A missing capability produces ``UNAVAILABLE``, never a plausible answer.**
 """
 
 from __future__ import annotations
 
-import importlib
-import importlib.util
-import json
-import os
-import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
-ENV_PREFIX = "PGATE_"
+__all__ = ["CapabilityUnavailable", "ProviderSet", "Provider", "resolve_providers"]
 
-#: capability -> (env suffix, dotted module, required attributes)
-REQUIREMENTS: dict[str, tuple[str, str, tuple[str, ...]]] = {
-    "hardware_facts": (
-        "HARDWARE_FACTS_PATH",
-        "ollama_controller.hardware.facts",
-        ("HardwareProfile", "MemoryFact", "DetectionStatus"),
-    ),
-    "hardware_observer": (
-        "HARDWARE_OBSERVER_PATH",
-        "ollama_controller.hardware.observer",
-        ("RealHardwareObserver",),
-    ),
-    "hardware_memory": (
-        "HARDWARE_MEMORY_PATH",
-        "ollama_controller.hardware.windows_memory",
-        ("WindowsMemoryProbe",),
-    ),
-    "hardware_nvidia": (
-        "HARDWARE_NVIDIA_PATH",
-        "ollama_controller.hardware.nvidia_query",
-        ("NvidiaQueryAdapter",),
-    ),
+
+class CapabilityUnavailable(RuntimeError):
+    """A required capability could not be supplied."""
+
+    def __init__(self, capability: str, detail: str = "") -> None:
+        super().__init__(f"capability {capability!r} unavailable: {detail}")
+        self.capability = capability
+        self.detail = detail
+
+
+#: capability name -> (dotted module inside wyrd_placement_core, attributes)
+REQUIREMENTS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "hardware_facts": ("hardware.facts", ("HardwareProfile", "MemoryFact", "DetectionStatus")),
+    "hardware_observer": ("hardware.observer", ("RealHardwareObserver",)),
+    "hardware_memory": ("hardware.windows_memory", ("WindowsMemoryProbe",)),
+    "hardware_nvidia": ("hardware.nvidia_query", ("NvidiaQueryAdapter",)),
     "placement_planner": (
-        "PLANNER_PATH",
-        "ollama_controller.policy.inference_placement",
+        "policy.inference_placement",
         (
             "PlacementPolicy",
             "PlacementPlanningPolicy",
@@ -61,47 +53,26 @@ REQUIREMENTS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "verify_placement",
         ),
     ),
-    "model_profile": (
-        "MODEL_PROFILE_PATH",
-        "ollama_controller.policy.model_profile",
-        ("ModelProfile", "ProfileSource"),
-    ),
-    "chat_adapter": (
-        "CHAT_ADAPTER_PATH",
-        "ollama_controller.backends.chat",
-        ("OllamaChatAdapter", "OllamaChatProfile"),
-    ),
-    "backends_base": (
-        "BACKENDS_BASE_PATH",
-        "ollama_controller.backends.backends",
-        ("ChatBackend", "ChatSendError"),
-    ),
-    "ledger": ("LEDGER_PATH", "ollama_controller.ledger.ledger", ("Ledger",)),
+    "model_profile": ("policy.model_profile", ("ModelProfile", "ProfileSource")),
+    "chat_adapter": ("backends.chat", ("OllamaChatAdapter", "OllamaChatProfile")),
+    "backends_base": ("backends.backends", ("ChatBackend", "ChatSendError")),
+    "ledger": ("ledger.ledger", ("Ledger",)),
     "controller": (
-        "CONTROLLER_PATH",
-        "ollama_controller.controller.controller",
-        ("Controller", "ControllerError"),
+        "controller.placement",
+        ("PlacementRunner",),
     ),
 }
 
-_CONFIG_NAME = "pgate.providers.json"
-
-
-class CapabilityUnavailable(RuntimeError):
-    def __init__(self, capability: str, detail: str = "") -> None:
-        super().__init__(f"capability {capability!r} unavailable: {detail}")
-        self.capability = capability
-        self.detail = detail
-
 
 @dataclass
-class Resolution:
+class Provider:
+    """One resolved capability."""
+
     capability: str
     module_name: str
-    source: str
-    detail: str = ""
     module: Any = None
     missing_attributes: tuple[str, ...] = ()
+    detail: str = ""
 
     @property
     def ok(self) -> bool:
@@ -111,7 +82,7 @@ class Resolution:
         return {
             "capability": self.capability,
             "module": self.module_name,
-            "source": self.source,
+            "source": "dependency" if self.ok else "unresolved",
             "detail": self.detail,
             "resolved": self.ok,
             "missing_attributes": list(self.missing_attributes),
@@ -120,142 +91,60 @@ class Resolution:
 
 @dataclass
 class ProviderSet:
-    resolutions: dict[str, Resolution] = field(default_factory=dict)
+    """Every named capability, resolved once by import."""
 
-    def module(self, capability: str) -> Any:
-        res = self.resolutions.get(capability)
-        return res.module if res and res.ok else None
+    resolutions: dict[str, Provider] = field(default_factory=dict)
 
     def is_available(self, capability: str) -> bool:
-        res = self.resolutions.get(capability)
-        return bool(res and res.ok)
+        provider = self.resolutions.get(capability)
+        return provider.ok if provider is not None else False
+
+    def module(self, capability: str) -> Any:
+        provider = self.resolutions.get(capability)
+        return provider.module if provider is not None and provider.ok else None
 
     def require(self, capability: str) -> Any:
-        mod = self.module(capability)
-        if mod is None:
-            res = self.resolutions.get(capability)
-            raise CapabilityUnavailable(capability, res.detail if res else "not resolved")
-        return mod
-
-    def missing(self) -> tuple[str, ...]:
-        return tuple(sorted(n for n, r in self.resolutions.items() if not r.ok))
-
-    def as_dict(self) -> dict[str, Any]:
-        return {n: r.as_dict() for n, r in sorted(self.resolutions.items())}
-
-
-def config_path() -> Path:
-    return Path(__file__).resolve().parent.parent / _CONFIG_NAME
-
-
-def load_config() -> dict[str, Any]:
-    path = config_path()
-    if not path.is_file():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf8"))
-    except (OSError, ValueError):
-        return {}
-
-
-def _load_from_file(path: Path) -> Any:
-    spec = importlib.util.spec_from_file_location(f"_pgate_{path.stem}", path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"cannot load {path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _seed_upstream_path() -> str:
-    """Add the upstream package root to sys.path once, if the operator named one.
-
-    ``PGATE_UPSTREAM_PATH`` is the single seam a user is expected to set: one
-    directory containing the ``ollama_controller`` package. The per-capability
-    variables remain available for unusual layouts, but they are per-module
-    overrides rather than the normal route.
-    """
-    root = os.environ.get(ENV_PREFIX + "UPSTREAM_PATH", "").strip()
-    if not root:
-        return ""
-    directory = str(Path(root))
-    if directory not in sys.path:
-        sys.path.insert(0, directory)
-    return directory
-
-
-def _resolve_one(capability: str, cfg: dict[str, Any]) -> Resolution:
-    env_suffix, module_name, required = REQUIREMENTS[capability]
-    env_value = os.environ.get(ENV_PREFIX + env_suffix, "").strip()
-
-    attempts: list[tuple[str, str]] = []
-    if env_value:
-        attempts.append(("env:" + ENV_PREFIX + env_suffix, env_value))
-    attempts.append(("env:" + ENV_PREFIX + "UPSTREAM_PATH", "seeded"))
-    attempts.append(("installed", module_name))
-    for entry in cfg.get("search_paths", []) or []:
-        attempts.append(("config:search_paths", entry))
-
-    first_error = ""
-    for source, target in attempts:
-        added = False
-        try:
-            if source == "env:" + ENV_PREFIX + "UPSTREAM_PATH":
-                if not _seed_upstream_path():
-                    continue
-                module = importlib.import_module(module_name)
-            elif source.startswith("env:"):
-                candidate = Path(target)
-                if candidate.is_dir():
-                    if str(candidate) not in sys.path:
-                        sys.path.insert(0, str(candidate))
-                        added = True
-                    module = importlib.import_module(module_name)
-                else:
-                    module = _load_from_file(candidate)
-            elif source == "installed":
-                module = importlib.import_module(module_name)
-            else:
-                directory = Path(target)
-                if not directory.is_dir():
-                    continue
-                if str(directory) not in sys.path:
-                    sys.path.insert(0, str(directory))
-                    added = True
-                module = importlib.import_module(module_name)
-        except Exception as exc:  # noqa: BLE001 - reported, never swallowed
-            if not first_error:
-                first_error = f"{source}: {type(exc).__name__}: {exc}"
-            continue
-        finally:
-            if added:
-                try:
-                    sys.path.remove(str(Path(target)))
-                except ValueError:
-                    pass
-
-        missing = tuple(a for a in required if not hasattr(module, a))
-        return Resolution(
-            capability=capability,
-            module_name=module_name,
-            source=source,
-            detail="" if not missing else f"missing attributes: {', '.join(missing)}",
-            module=module,
-            missing_attributes=missing,
-        )
-
-    return Resolution(
-        capability=capability,
-        module_name=module_name,
-        source="unresolved",
-        detail=first_error or f"no provider for {module_name!r}",
-    )
+        provider = self.resolutions.get(capability)
+        if provider is None:
+            raise CapabilityUnavailable(
+                capability, "not a declared capability of wyrd-placement-core"
+            )
+        if not provider.ok:
+            raise CapabilityUnavailable(capability, provider.detail)
+        return provider.module
 
 
 def resolve_providers(capabilities: tuple[str, ...] | None = None) -> ProviderSet:
-    """Resolve the named capabilities. Imports nothing until a name is asked for."""
-    cfg = load_config()
-    names = capabilities if capabilities is not None else tuple(sorted(REQUIREMENTS))
-    return ProviderSet(
-        resolutions={name: _resolve_one(name, cfg) for name in names}
-    )
+    """Resolve capabilities from the installed dependency.
+
+    Resolution is a named import of ``wyrd_placement_core.<module>``. Nothing is
+    discovered, enumerated or searched.
+    """
+    import importlib
+
+    resolutions: dict[str, Provider] = {}
+    for name in (capabilities or tuple(REQUIREMENTS)):
+        dotted, attributes = REQUIREMENTS[name]
+        module_name = f"wyrd_placement_core.{dotted}"
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as exc:  # noqa: BLE001 - reported, never substituted
+            resolutions[name] = Provider(
+                capability=name,
+                module_name=module_name,
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+            continue
+        missing = tuple(a for a in attributes if not hasattr(module, a))
+        resolutions[name] = Provider(
+            capability=name,
+            module_name=module_name,
+            module=module,
+            missing_attributes=missing,
+            detail=(
+                f"missing attributes: {', '.join(missing)}"
+                if missing
+                else "wyrd-placement-core"
+            ),
+        )
+    return ProviderSet(resolutions=resolutions)

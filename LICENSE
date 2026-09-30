@@ -4,46 +4,33 @@ Copyright (c) 2026 Placement Gate contributors
 
 --------------------------------------------------------------------------
 
-DISTRIBUTION SHAPE: ADAPTER-ONLY PUBLIC DEMO
+DISTRIBUTION SHAPE
 
-Operator decision, 2026-09-30. Placement Gate is published as an
-adapter-only demonstration. It binds at runtime to an operator-provided copy of
-the upstream `ollama_controller` package and reproduces none of it.
+Placement Gate depends on wyrd-placement-core, a separate public package
+licensed under Apache-2.0:
 
-Placement Gate redistributes NONE of the following:
+    https://github.com/Wyrd-Flux/wyrd-placement-core
 
-  * ollama_controller, in whole or in part
-  * the Model Characteristics Registry
-  * any model weights, blobs, or GGUF files
-  * any ledger, corpus, or machine-specific state
-  * any other internal payload
+That dependency is installed normally by pip. Placement Gate copies none of it
+and grants no rights in it; see its own LICENSE for the terms that apply to it.
 
-Self-contained bundling is PROHIBITED until upstream licensing is explicitly
-settled by the operator.
+Placement Gate ships no private corpus, no model weights, no ledgers and no
+internal source tree. It is runnable by anyone with Python 3.11, network access
+to GitHub, and -- for live placement -- a running Ollama.
 
 --------------------------------------------------------------------------
 
-UPSTREAM RIGHTS ARE NOT CONVEYED
+DERIVED WORK: PROVENANCE
 
-This license conveys rights to Placement Gate's own code only. It grants no
-rights in the upstream `ollama_controller` package, and a recipient of this
-repository acquires no right to use, copy, or redistribute it by virtue of
-receiving this one.
+Placement Gate's placement primitives were extracted from an internal source
+repository for the public release. The extraction, the exact source paths and
+SHA-256 hashes, the AST comparison proving the placement seam is unchanged, and
+the one schema subtraction are recorded in docs/PROVENANCE.md and in
+wyrd-placement-core's own PROVENANCE.md.
 
-Upstream ownership and licensing are UNRESOLVED. As of 2026-09-30 the
-`ollama_controller` package is not published on PyPI and its source tree carries
-no license file. Placement Gate imports it at runtime; it does not vendor,
-copy, or modify it.
-
-Because nothing upstream is redistributed here, publication requires no grant
-from anyone. But absent a license that code is all-rights-reserved by default,
-so this repository has no durable right to depend on it -- it simply copies
-nothing out.
-
-No license was added to any upstream repository as part of this decision, and
-none should be inferred from this repository's presence.
-
-See docs/LICENSING.md for the full analysis and the remaining open question.
+No license file was added to, or modified in, any internal source repository as
+part of that extraction or of the migration. The internal trees remain
+unlicensed; the grant covers the extracted public work.
 
 --------------------------------------------------------------------------
 

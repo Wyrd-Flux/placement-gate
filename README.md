@@ -4,7 +4,7 @@
 
 Placement Gate is a small command-line application assembled almost entirely
 from capability that already exists upstream. It binds to the
-`ollama_controller` package at runtime and **reimplements none of it** — no
+`wyrd-placement-core` package and **reimplements none of it** — no
 placement policy, no budget arithmetic, no verification rule. Every refusal and
 every verdict printed here was decided upstream and is reported with the
 upstream's own reason string.
@@ -58,47 +58,41 @@ That exit code is deliberate. The command ran, and the answer is "no". See
 ## Install
 
 ```console
+$ git clone https://github.com/Wyrd-Flux/placement-gate
+$ cd placement-gate
 $ python -m venv .venv
-$ .venv/Scripts/python -m pip install -e .        # Windows
-$ .venv/bin/python -m pip install -e .             # POSIX
+$ .venv/bin/pip install .
+$ .venv/bin/pgate hardware
 ```
 
-Placement Gate has **no runtime dependencies of its own** (`dependencies = []`).
-It does need `pydantic`, which the upstream package requires:
+That is the whole setup. The placement policy, hardware observation, the Ollama
+adapter, the ledger and the verified load seam come from
+[`wyrd-placement-core`](https://github.com/Wyrd-Flux/wyrd-placement-core), an
+ordinary installed dependency:
+
+```
+placement-gate → wyrd-placement-core → pydantic → Python stdlib
+```
+
+No environment variables, no source-tree bindings, no access to anything private.
+Python 3.11 or newer, and `pip` with network access to GitHub.
+
+Live commands additionally need a running Ollama. `hardware`, `doctor`,
+`exit-codes` and `selftest` (without `--live`) do not.
+
+## Check the binding
 
 ```console
-$ python -m pip install -e . pydantic
-```
-
-If `pydantic` is absent, `pgate` says exactly that rather than failing obscurely:
-
-```
-detail     : env:PGATE_UPSTREAM_PATH: ModuleNotFoundError: No module named 'pydantic'
-```
-
-## Point it at the upstream package
-
-The `ollama_controller` package is not on PyPI. Point Placement Gate at a copy:
-
-```console
-$ export PGATE_UPSTREAM_PATH=/path/to/Ollama_Controller/src
 $ pgate doctor
 upstream capability load
   [ok  ] backends_base          AVAILABLE
   [ok  ] chat_adapter           AVAILABLE
-  [ok  ] controller             AVAILABLE
-  [ok  ] hardware_facts         AVAILABLE
-  [ok  ] hardware_memory        AVAILABLE
-  [ok  ] hardware_nvidia        AVAILABLE
-  [ok  ] hardware_observer      AVAILABLE
-  [ok  ] ledger                 AVAILABLE
-  [ok  ] model_profile          AVAILABLE
-  [ok  ] placement_planner      AVAILABLE
+  ...
 ```
 
-If the upstream package is installed normally, `PGATE_UPSTREAM_PATH` is not
-needed. Nothing is written to disk to find it: if a capability cannot be
-resolved, `pgate` says so and exits non-zero.
+Every capability comes from the one installed package. There is nothing to search
+for: if a capability cannot be imported, `pgate` says so and exits non-zero
+rather than answering from something else.
 
 ---
 

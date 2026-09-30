@@ -491,35 +491,26 @@ class PlacementGateSession:
         except CapabilityUnavailable as exc:
             return self._unavailable(*exc.capability.split(", "))
 
-        controller_mod = self._p.module("controller")
+        runner_mod = self._p.module("controller")
         ledger_mod = self._p.module("ledger")
         chat = self._p.module("chat_adapter")
         send_error = self._p.module("backends_base").ChatSendError
 
-        adapter = chat.OllamaChatAdapter(endpoint=endpoint)
-        controller = controller_mod.Controller(
-            ledger_mod.Ledger(Path(tempfile.mkdtemp(prefix="pgate_")) / "placement.db")
-        )
-        controller.set_backend(adapter)
-
         facts = planned["model"]
-        session = controller.create_session(actor="pgate")
-        identity = controller.bind_identity(
-            session_id=session,
-            model_requested=facts["tag"],
-            model_digest=facts["digest"],
-            parameter_count=ModelFacts(
-                tag=facts["tag"], digest=facts["digest"], size_bytes=facts["size_bytes"],
-                parameter_size=facts["parameter_size"],
-                context_length=facts["context_length"], family=facts["family"],
-                quantization=facts["quantization"],
-            ).parameter_count,
-            placement="GPU_ELIGIBLE",
-            resource="NORMAL",
-            backend_id="pgate",
-            bootstrap_content="pgate",
+        model_facts = ModelFacts(
+            tag=facts["tag"], digest=facts["digest"], size_bytes=facts["size_bytes"],
+            parameter_size=facts["parameter_size"],
+            context_length=facts["context_length"], family=facts["family"],
+            quantization=facts["quantization"],
         )
-        identity_id = getattr(identity, "identity_id", identity)
+        adapter = chat.OllamaChatAdapter(endpoint=endpoint)
+        runner = runner_mod.PlacementRunner(
+            ledger_mod.Ledger(Path(tempfile.mkdtemp(prefix="pgate_")) / "placement.db"),
+            adapter,
+        )
+        # The seam takes identifiers as strings. It never needed a session store.
+        session = f"pgate-{facts['digest'][:12]}"
+        identity_id = f"pgate-identity-{facts['digest'][:12]}"
 
         outcome: dict[str, Any] = {
             "status": Status.AVAILABLE.value,
@@ -532,7 +523,7 @@ class PlacementGateSession:
         try:
             from datetime import datetime, timezone
 
-            decision = controller.place_and_load_model(
+            decision = runner.place_and_load_model(
                 planned["_plan"],
                 planned["_hardware"],
                 planned["_model_profile"],
@@ -689,41 +680,65 @@ class PlacementGateSession:
                     "require it."
                 ),
             }
-        try:
-            self._require("controller")  # the registry reader ships in that package
-            snapshot = importlib_import(
-                "ollama_controller.registries.model_characteristics.snapshot"
-            )
-        except Exception as exc:  # noqa: BLE001
-            return self._unavailable("controller")
-        try:
-            state = snapshot.LocalSnapshotStore(registry_root).load_state()
-        except Exception as exc:  # noqa: BLE001 - registry refuses its own state
-            return {
-                "status": "REGISTRY_UNREADABLE",
-                "evaluated": True,
-                "detail": f"{type(exc).__name__}: {exc}",
-                "note": (
-                    "the registry rejected its own effective state, so nothing is "
-                    "reported from it. Observed service facts are unaffected."
-                ),
-            }
+        return _read_characteristics_registry(registry_root)
+
+
+def _read_characteristics_registry(root: str) -> dict[str, Any]:
+    """Read a characteristics registry document, WITHOUT verifying it.
+
+    The registry's own verifier is not part of the public placement core, and a
+    reader that skipped the digest check while looking like the real one would be
+    worse than none. So this counts what is in the document and says, in the
+    payload, that it is unverified.
+
+    Placement never consults this. A plan is computed from measured hardware and
+    observed model facts; a registry is a record of what is already known about a
+    specimen, which is a different kind of claim.
+    """
+    import json
+
+    path = Path(root)
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
         return {
-            "status": Status.AVAILABLE.value,
+            "status": "REGISTRY_UNREADABLE",
             "evaluated": True,
-            "registry_revision": state.get("registry_revision"),
-            "registry_digest": state.get("registry_digest"),
-            "specimen_count": len(state.get("specimens") or []),
-            "family_count": len(state.get("families") or []),
-            "serving_binding_count": len(state.get("serving_bindings") or []),
-            "observation_count": len(state.get("observation_ledger") or []),
+            "detail": f"{type(exc).__name__}: {exc}",
+            "verified": False,
         }
-
-
-def importlib_import(name: str) -> Any:
-    import importlib
-
-    return importlib.import_module(name)
+    except json.JSONDecodeError as exc:
+        return {
+            "status": "REGISTRY_UNREADABLE",
+            "evaluated": True,
+            "detail": f"not valid JSON: {exc}",
+            "verified": False,
+        }
+    if not isinstance(document, dict):
+        return {
+            "status": "REGISTRY_UNREADABLE",
+            "evaluated": True,
+            "detail": "registry document is not an object",
+            "verified": False,
+        }
+    return {
+        "status": Status.AVAILABLE.value,
+        "evaluated": True,
+        "verified": False,
+        "registry_revision": document.get("registry_revision"),
+        "registry_digest": document.get("registry_digest"),
+        "specimen_count": len(document.get("specimens") or []),
+        "family_count": len(document.get("families") or []),
+        "serving_binding_count": len(document.get("serving_bindings") or []),
+        "observation_count": len(document.get("observation_ledger") or []),
+        "note": (
+            "UNVERIFIED. These counts are read from the document as supplied; no "
+            "digest or integrity check was performed, because the registry's own "
+            "verifier is not part of the public placement core. Treat the counts "
+            "as a description of the file, not as evidence that the registry is "
+            "internally consistent."
+        ),
+    }
 
 
 def _resolve_nvidia(explicit: str | None) -> str | None:

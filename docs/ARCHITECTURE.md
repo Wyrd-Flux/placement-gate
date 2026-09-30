@@ -24,23 +24,22 @@ exactly what is delegated and what — almost nothing — is local.
                     ┌──────────────────▼─────────────────────┐
                     │       pgate_demo.providers              │
                     │  named surfaces only, resolved lazily    │
-                    │  1. PGATE_<NAME>_PATH                   │
-                    │  2. PGATE_UPSTREAM_PATH (seeded)        │
-                    │  3. an installed ollama_controller      │
-                    │  4. search_paths (shipped empty)        │
-                    └──────────────────┬─────────────────────┘
+                    │  named surfaces only, resolved lazily    │
+                    │  1. importlib by name, from the dependency │
+                    │  2. the declared dependency              │
+                    └───────────────┬──────────────────────┘
                                        │
                     ┌──────────────────▼─────────────────────┐
-                    │        ollama_controller (upstream)     │
+                    │       wyrd-placement-core (public)       │
                     │                                         │
                     │  hardware/{facts,observer,windows_      │
                     │            memory,nvidia_query}         │
-                    │  policy/inference_placement   <- plans  │
-                    │  policy/model_profile                    │
-                    │  backends/{chat,backends}      <- I/O   │
-                    │  ledger/ledger                  <- state │
-                    │  controller/controller  <- place_and_load │
-                    │  registries/model_characteristics (opt)  │
+                    │  policy/{model_profile,admission,       │
+                    │          inference_placement}           │
+                    │  backends/{backends,chat}      <- I/O   │
+                    │  ledger/{ledger,models,residency}       │
+                    │  controller/placement       <- the seam  │
+                    │  topology                                │
                     └─────────────────────────────────────────┘
 ```
 
@@ -51,10 +50,10 @@ exactly what is delegated and what — almost nothing — is local.
 | `observe_hardware` | `hardware.observer.RealHardwareObserver` + `windows_memory` + `nvidia_query` | what the machine has, and whether the evidence is contradictory |
 | `census` | `backends.chat.OllamaChatAdapter` (admitted GETs) | which models the service offers |
 | `plan` | `policy.inference_placement.plan_inference_placement` | whether a model fits, in which topology, with which reason |
-| `place` | `controller.Controller.place_and_load_model` | the whole lifecycle, including whether to keep the model loaded |
+| `place` | `controller.placement.PlacementRunner.place_and_load_model` | the whole lifecycle, including whether to keep the model loaded |
 | `observe_residency` | the service's `/api/ps`, decoded as raw evidence | nothing — it reports |
 | `unload` | the adapter's admitted `POST /api/chat` with `keep_alive=0` | nothing — it is an explicit request |
-| `characteristics` | `registries.model_characteristics.snapshot.LocalSnapshotStore` | whether the registry's own state is internally consistent |
+| `characteristics` | **nothing** — an explicit unverified JSON read | nothing; the payload carries `verified: false` |
 
 ### The one thing that is not upstream
 
@@ -93,9 +92,9 @@ report `VERIFIED`.
 
 ## Two failure modes this package is built to avoid
 
-**Eager import.** `import pgate_demo` imports no upstream module. Resolution is
+**Eager import.** `import pgate_demo` imports no core module. Resolution is
 lazy: each capability is resolved on first use. A test asserts that importing
-the package leaves `sys.modules` free of `ollama_controller`, and another asserts
+the package leaves `sys.modules` free of `wyrd_placement_core`, and another asserts
 the provider layer contains no `os.walk`, `pkgutil`, `glob` or `scandir`.
 
 This is not squeamishness. The estate this demo is drawn from contains a
@@ -122,8 +121,9 @@ all.
   `stream_chat` appear nowhere in the package.
 - **No implicit cleanup.** `place` leaves the model loaded. `--unload-after` is
   the only path that releases it, and it says so.
-- **No machine paths in version control.** `pgate.providers.json` ships with an
-  empty `search_paths`.
+- **No machine paths in version control, and nowhere they could go.**
+  `pgate.providers.json` is deleted; resolution is a named import of a declared
+  dependency, so there is no file left in which a local path could be recorded.
 - **No private data in output.** Private payload keys are stripped before
   rendering. `census` reports tag, digest, size, context, parameters,
   quantization and residency — and nothing else.

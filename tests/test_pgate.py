@@ -7,8 +7,8 @@ substitute anything for a missing capability, and keeps process success separate
 from domain refusal.
 
 The upstream suites remain the authority on placement behaviour:
-  Ollama_Controller/tests/test_inference_placement.py   the planning layer
-  Ollama_Controller/tests/test_placement_runtime.py     the method itself
+  Ollama_PlacementRunner/tests/test_inference_placement.py   the planning layer
+  Ollama_PlacementRunner/tests/test_placement_runtime.py     the method itself
 No upstream test logic is duplicated here.
 """
 
@@ -38,7 +38,7 @@ from pgate_demo.providers import (
 )
 from pgate_demo.selftest import FIXTURE_FACTS, run_selftest
 
-UPSTREAM = "ollama_controller"
+CORE = "wyrd_placement_core"
 TRIPLE = '"' * 3
 NEWLINE = chr(10)
 
@@ -49,7 +49,7 @@ def upstream_available() -> bool:
 
 needs_upstream = pytest.mark.skipif(
     not upstream_available(),
-    reason="the upstream ollama_controller package is not available",
+    reason="wyrd-placement-core is not installed",
 )
 
 
@@ -99,24 +99,29 @@ def test_version_exported() -> None:
     assert PGATE_VERSION == "0.1.0"
 
 
-def test_console_script_is_declared_and_dependencies_are_empty() -> None:
+def test_console_script_is_declared_and_depends_only_on_the_public_core() -> None:
     import tomllib
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent
     data = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     assert data["project"]["scripts"]["pgate"] == "pgate_demo.cli:main"
-    assert data["project"]["dependencies"] == []
+    assert len(data["project"]["dependencies"]) == 1
+    only = data["project"]["dependencies"][0]
+    assert only.startswith("wyrd-placement-core"), only
+    assert "git+https://github.com/Wyrd-Flux/wyrd-placement-core" in only
 
 
-def test_shipped_provider_config_has_no_paths() -> None:
+def test_no_search_path_configuration_survives() -> None:
+    """Resolution is a named import of the dependency. Nothing is scanned.
+
+    The provider config that once shipped (with an empty search_paths list) is
+    gone: there is no longer anywhere a machine-specific path could be recorded.
+    """
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent
-    cfg = json.loads(
-        (root / "pgate_demo" / "pgate.providers.json").read_text(encoding="utf-8")
-    )
-    assert cfg["search_paths"] == [], "no machine-specific path may be shipped"
+    assert not (root / "pgate_demo" / "pgate.providers.json").exists()
 
 
 # --------------------------------------------------------------------------- #
@@ -124,10 +129,13 @@ def test_shipped_provider_config_has_no_paths() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_every_capability_names_an_upstream_module() -> None:
-    for name, (_env, module, required) in REQUIREMENTS.items():
-        assert module.startswith(UPSTREAM + "."), f"{name} does not name upstream"
+def test_every_capability_names_a_module_in_the_public_core() -> None:
+    for name, (module, required) in REQUIREMENTS.items():
+        assert module, f"{name} names no module"
         assert required, f"{name} declares no required attribute"
+        assert "ollama_controller" not in module, (
+            f"{name} still points at the private package"
+        )
 
 
 def test_import_binds_nothing() -> None:
@@ -137,7 +145,7 @@ def test_import_binds_nothing() -> None:
 
     code = (
         "import sys, pgate_demo, pgate_demo.providers;"
-        "print([m for m in sys.modules if m.startswith('ollama_controller')])"
+        "print([m for m in sys.modules if m.startswith('wyrd_placement_core')])"
     )
     out = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, timeout=180
@@ -239,7 +247,7 @@ def test_unreachable_service_is_distinct_from_a_refusal(
     The provider IS resolvable here; only the transport fails. Conflating the
     three would make a stopped service look like a missing dependency.
     """
-    import ollama_controller.backends.chat as chat_mod
+    import wyrd_placement_core.backends.chat as chat_mod
 
     class _Dead:
         def __init__(self, **kwargs):
@@ -460,8 +468,8 @@ def test_load_is_attempted_and_observation_follows_it(
     If residency were observed before the load, every verdict would be
     meaningless, and no amount of correct arithmetic would catch it.
     """
-    from ollama_controller.backends.chat import OllamaChatAdapter
-    from ollama_controller.controller.controller import Controller
+    from wyrd_placement_core.backends.chat import OllamaChatAdapter
+    from wyrd_placement_core.controller.placement import PlacementRunner
 
     session = PlacementGateSession()
     planned = session.plan(FIXTURE_FACTS, placement="DEVICE_ONLY", num_gpu=99)
@@ -498,15 +506,15 @@ def test_load_is_attempted_and_observation_follows_it(
                 }]}
             return {"models": []}
 
-    monkeypatch.setattr(Controller, "place_and_load_model", fake_place_and_load)
+    monkeypatch.setattr(PlacementRunner, "place_and_load_model", fake_place_and_load)
     monkeypatch.setattr(OllamaChatAdapter, "_request", _FakeAdapter()._request, raising=False)
     monkeypatch.setattr(
-        "ollama_controller.backends.chat.OllamaChatAdapter", _FakeAdapter
+        "wyrd_placement_core.backends.chat.OllamaChatAdapter", _FakeAdapter
     )
 
     outcome = session.place(planned, unload_after=False)
     assert outcome["load_attempted"] is True
-    assert "load" in order, "the upstream placement method was never called"
+    assert "load" in order, "the placement method was never called"
     assert order.index("load") < order.index("read:/api/ps"), (
         "residency must be observed after the load, never before"
     )
@@ -524,7 +532,7 @@ def test_partial_residency_is_not_rounded_up(
     This is the live finding the demo exists to preserve: requesting full
     offload and getting one layer back is a refusal, not a success.
     """
-    import ollama_controller.backends.chat as chat_mod
+    import wyrd_placement_core.backends.chat as chat_mod
 
     cases = [
         # name, size, size_vram, expected fully_gpu_resident

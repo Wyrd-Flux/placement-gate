@@ -9,7 +9,9 @@ which claims were actually executed rather than argued.
 |---|---|
 | GPU | NVIDIA GeForce RTX 3070 Laptop GPU, 8.0 GiB VRAM |
 | Host RAM | 63.82 GiB |
-| Service | Ollama 0.33.3 at `127.0.0.1:11434` |
+| Service | Ollama at `127.0.0.1:11434`, 44 models |
+| Dependency | `wyrd-placement-core` 0.1.0 from GitHub |
+| Private estate | **not required, and not consulted** |
 | Models present | 44 |
 | Upstream | `Ollama_Controller/src` working tree, repaired seam |
 
@@ -52,26 +54,44 @@ request.
 
 This is the claim the demo exists for.
 
+Re-verified live **after** the migration to `wyrd-placement-core`:
+
 ```console
-$ pgate --text place qwen3.5:2b-opencode-64k --num-gpu 1 --unload-after
+$ pgate --text place tinyllama:1.1b --keep-alive 20s --unload-after
+VERDICT    : ADMITTED
+RESIDENCY  : tinyllama:1.1b  size=0.65 GiB  size_vram=0.65 GiB  fully_gpu=True
+IDENTITY   : digest match=True  tag match=True
+UNLOADED   : tinyllama:1.1b still resident: False  (service resident count now 0)
+
+$ pgate --text place tinyllama:1.1b --num-gpu 1 --keep-alive 20s --unload-after
 VERDICT    : VERIFICATION_FAILED
 DETAIL     : placement verification failed: FAILED; model loaded but evidence
              does not match requested placement; fail closed
-RESIDENCY  : size=2.88 GiB  size_vram=0.64 GiB  fully_gpu=False
+RESIDENCY  : tinyllama:1.1b  size=0.7 GiB  size_vram=0.1 GiB  fully_gpu=False
 IDENTITY   : digest match=True  tag match=True
+UNLOADED   : tinyllama:1.1b still resident: False  (service resident count now 0)
+$ echo $?
+0
 ```
 
-`size_vram` is non-zero. Something *is* on the GPU. The request was full GPU
-residency and 0.64 of 2.88 GiB is not that, so the system refuses.
+`size_vram` is non-zero — one layer really is on the card. The request was full
+GPU residency and 0.1 of 0.7 GiB is not that, so the system refuses, and the
+refusal is still exit 0 because the evaluation completed.
 
 Measured across the service's own `--num-gpu` semantics:
 
 | `--num-gpu` | observed `size_vram` | verdict |
 |---:|---|---|
 | 0 | 0 | CPU-resident, as asked |
-| 1 | 0.64 GiB of 2.88 GiB | **refused** — one layer is not full residency |
-| 99 | 2.30 GiB of 2.30 GiB | verified |
-| −1 | 2.30 GiB of 2.30 GiB | verified here, rejected upstream by the policy validator |
+| 1 | 0.1 GiB of 0.7 GiB | **refused** — one layer is not full residency |
+| 99 | 0.65 GiB of 0.65 GiB | verified |
+
+**A note on the development machine.** The laptop crashed partway through this
+session and the model service went down with it. It was restarted and the live
+claims above were re-run from scratch against the migrated code, using the
+smallest local weight and a short `--keep-alive` so the GPU was under the lightest
+possible load. Nothing about the crash was reproduced, and no evidence from before
+the crash is relied on above.
 
 ## Claim 4 — identity is checked separately from size
 
@@ -99,9 +119,9 @@ to destroy. Placement Gate reports the residency so it is visible.
 ## Claim 6 — a missing capability produces no answer
 
 ```console
-$ PGATE_UPSTREAM_PATH=/nonexistent pgate plan qwen3.5:9b-opencode-32k; echo $?
-status     : UNAVAILABLE
-exit       : 2
+$ # with wyrd-placement-core uninstalled, the import fails at module load and
+$ # pgate refuses to start rather than answering from a substitute
+ModuleNotFoundError: No module named 'wyrd_placement_core'
 ```
 
 No plan, no estimate, no fallback. Pinned by four tests, one asserting the
@@ -153,8 +173,7 @@ Stated so the record is honest:
 ```console
 $ git clone https://github.com/Wyrd-Flux/placement-gate
 $ cd placement-gate
-$ python -m venv .venv && .venv/bin/python -m pip install -e .
-$ export PGATE_UPSTREAM_PATH=/path/to/Ollama_Controller/src
+$ python -m venv .venv && .venv/bin/python -m pip install .
 $ pgate doctor
 $ pgate --text selftest --live
 ```

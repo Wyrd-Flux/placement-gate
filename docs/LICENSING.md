@@ -1,111 +1,92 @@
-# Licensing analysis
+# Licensing
 
-Recorded 2026-09-30, for the `Wyrd-Flux/placement-gate` publication decision.
+Recorded 2026-09-30, and updated for the migration to a public core.
 
 ## Short answer
 
-Placement Gate's own code is MIT. It **redistributes nothing upstream**, so
-publication requires no permission from anyone. Upstream licensing is
-**unresolved**, and no license was added to any upstream repository.
-
-## What is in this repository
-
-| Path | Origin | License |
+| Component | License | Where |
 |---|---|---|
-| `pgate_demo/*.py` | written for this repository | MIT (this repo's `LICENSE`) |
-| `tests/test_pgate.py` | written for this repository | MIT |
-| `README.md`, `docs/*`, `pyproject.toml` | written for this repository | MIT |
-| `pgate_demo/pgate.providers.json` | written for this repository | MIT |
-| anything from `ollama_controller` | **nothing** | — |
-| anything from the characteristics registry | **nothing** | — |
-| model weights, GGUF files, ledgers, corpora | **nothing** | — |
+| Placement Gate | **MIT** | [`LICENSE`](../LICENSE) |
+| `wyrd-placement-core` | **Apache-2.0** | its own `LICENSE`, at its own repository |
 
-The package declares no runtime dependency on `ollama_controller` in
-`pyproject.toml`, because it is not installable from any index. It is resolved
-at runtime through `PGATE_UPSTREAM_PATH` or an already-installed copy. A
-recipient who has no upstream copy gets `pgate doctor` reporting every capability
-`UNAVAILABLE` — not a broken import, and not a silent fallback.
+Placement Gate depends on the placement core through ordinary packaging. Nothing
+private is redistributed by either repository.
 
-## The upstream position
+## The change, and why it was necessary
 
-`ollama_controller`:
+Placement Gate 0.1.0 was published adapter-only: it bound to an internal source
+tree at runtime via `PGATE_UPSTREAM_PATH` and redistributed none of it. That was
+a defensible reading of "publish nothing you cannot license", and it produced a
+repository that **nobody without the internal estate could run**.
 
-- not published on PyPI (`GET /pypi/ollama-controller/json` → `404`)
-- no `LICENSE`, `COPYING`, or `NOTICE` file in its source tree
-- no `license` field in its `pyproject.toml`
-- commit authorship spans three distinct identities
+The operator resolved this on 2026-09-30 by licensing the extracted public work
+explicitly (D1: Apache-2.0) and directing that both demos depend on it normally
+(D4: GitHub-only distribution in this phase).
 
-The Model Characteristics Registry likewise carries no license file.
+## What the migration did and did not do
 
-Absent a license grant, copyright defaults to **all rights reserved**. So the
-code is not available to the public on its own terms, regardless of how it was
-obtained or who holds it.
+**Did:** extract the placement primitives into
+`wyrd-placement-core`, and record their source paths and SHA-256 hashes in that
+package's `docs/PROVENANCE.md` — along with an AST-level comparison proving the
+placement seam is unchanged.
 
-## Why that does not block this publication
+**Did not:** add, modify, or remove a license in any internal source repository.
+`Ollama_Controller` remains unlicensed and unmodified. The Apache-2.0 grant
+covers the extracted public work.
 
-There is a real difference between *depending on* code and *redistributing* it,
-and it cuts in a specific direction here.
+**Did not:** fabricate history. Both migrations were new commits; the
+adapter-only releases remain in the git logs, so the earlier decision and its
+reversal are both auditable.
 
-1. **No upstream bytes ship.** Placement Gate imports `ollama_controller` at
-   runtime from a path the recipient supplies. Nothing upstream is copied into
-   this repository, its wheels, or its sdist. So this publication does not
-   distribute the upstream code, and the default "all rights reserved" rule —
-   which governs *distribution* — is not engaged.
+## The one non-delegation
 
-2. **The operator holds the rights.** The upstream tree is the operator's own
-   local work. They can point their own `pgate` at it today with complete
-   confidence. The MIT grant in this repo's `LICENSE` is separate and does not
-   purport to cover upstream.
-
-3. **A recipient gains nothing they did not already have.** Someone who reads
-   this repository learns *how to call* an API they must already possess the code
-   for. There is no path by which `pip install placement-gate` hands them
-   upstream code.
-
-## The open question, stated plainly
-
-The honest limitation is not a distribution problem. It is this: **this
-repository claims no durable right to depend on its upstream.** If the operator
-later relicenses `ollama_controller` under terms that forbid runtime binding, or
-if a third party asserts rights in it, Placement Gate's central dependency breaks
-without this repo having violated anything. The dependency is licensed by
-courtesy, not by grant.
-
-Two things follow, and neither has been done here:
-
-- **Nothing upstream was modified.** No `LICENSE` was added to
-  `Ollama_Controller` or to the characteristics registry. Choosing a license for
-  someone else's project is not an adapter's decision.
-- **No fabricated provenance.** This file does not claim upstream is MIT, Apache,
-  or proprietary. It says what was checked, on what date, and what was found.
-
-If the operator wants a durable basis, the resolution is a decision about
-`ollama_controller` itself — publish it under terms that permit runtime
-binding, or vendor it with a recorded grant. Both are the operator's call, not
-this package's.
-
-## Self-contained bundling is out
-
-There is no `vendor/`, no `wheelhouse/`, no copied capability surface, and no
-staged upstream tarball. `LICENSE` carries this decision in capitals:
+`census --registry-root` reads a Model Characteristics Registry document
+**without verifying it**, and says so in its payload:
 
 ```
-Self-contained bundling is PROHIBITED until upstream licensing is explicitly
-settled by the operator.
+UNVERIFIED. These counts are read from the document as supplied; no digest or
+integrity check was performed, because the registry's own verifier is not part
+of the public placement core.
 ```
 
-## Verifying the no-redistribution claim
+This is recorded here rather than only in the code because it is the one place
+where Placement Gate reports on data it has not checked. A reader that skipped
+the digest check while resembling the real one would be worse than none.
+
+Placement never consults the registry. A plan is computed from measured hardware
+and observed model facts, which is a different kind of claim from a record of
+what is already known about a specimen.
+
+## Third-party material
+
+None. `pgate_demo` imports only the standard library and `wyrd_placement_core`.
+The core imports the standard library and `pydantic`. No vendored subtrees, no
+embedded copyright headers, no copyleft dependency.
+
+## Why Apache-2.0 for the core, and MIT for the demo
+
+Apache-2.0 for the core because it is intended as reusable infrastructure:
+permissive reuse, plus an explicit patent grant and a contribution-licence
+clause, which matter for a library others will build on.
+
+Placement Gate is a demo rather than a library, and remains MIT. The asymmetry
+is deliberate — the code meant to be depended upon gets the stronger grant.
+
+## Not published
+
+| Not shipped | Licensing consequence |
+|---|---|
+| any `ollama_controller` module | not needed by anything here |
+| the internal controller's other 58 methods | memory lanes, checkpoints, authorization chains |
+| model weights, ledgers, machine state | nothing local is version-controlled |
+| the characteristics registry | optional, unverifiable without its private verifier |
+
+Nothing in either repository is licensed that was not extracted deliberately, and
+nothing extracted is left unlicensed.
+
+## Verifying
 
 ```console
-$ grep -rnE "^(class|def|from|import) " pgate_demo/ | grep -v "^\S*:.*pgate_demo\|from \.\|import \("
+$ pip show wyrd-placement-core     # Apache-2.0, per its own LICENSE
+$ git log --oneline               # history preserved; the migration is a new commit
 ```
-
-Every upstream symbol is reached through `ProviderSet.module(name)` or the
-adapter's own `_request`, never by importing upstream from this package. The
-package imports exactly one upstream thing anywhere: an `importlib.import_module`
-call inside the resolver, for a name the operator configured.
-
-## Applies to
-
-`LICENSE` is Placement Gate's own. It conveys nothing in `ollama_controller` or
-the Model Characteristics Registry.

@@ -1,143 +1,120 @@
 # Source provenance
 
-Recorded 2026-09-30.
+Recorded 2026-09-30, and updated for the migration to a public core.
 
-## Upstream sources
+## What Placement Gate depends on now
 
-| Upstream | Location | Used for |
-|---|---|---|
-| `ollama_controller` | `Ollama_Controller/src` (externalised gitdir under `C:/LocalGitDirs/`) | every decision |
-| `ollama_controller.registries.model_characteristics` | same package | optional characteristics read |
-| Model Characteristics Registry | `C:/Projects/Model_Characteristics_Registry` | optional, operator-supplied root |
-
-`ollama_controller` is a single package that Placement Gate consumes whole. It is
-not vendored, not copied, and not modified by this repository.
-
-## What was copied: nothing
-
-```console
-$ grep -rnE "class (HardwareProfile|ModelProfile|PlacementPolicy|ModelAdmissionPlan|OllamaChatAdapter|Controller)\b" pgate_demo/
-$ # no matches
 ```
+placement-gate
+  └─ wyrd-placement-core   (Apache-2.0, public, installed from GitHub)
+       └─ pydantic → Python standard library
+```
+
+That is the complete dependency graph. No source-tree binding, no environment
+variable, no private registry.
+
+`wyrd-placement-core` was extracted from an internal repository for this
+migration. Its own
+[`PROVENANCE.md`](https://github.com/Wyrd-Flux/wyrd-placement-core/blob/main/docs/PROVENANCE.md)
+records the exact source paths, SHA-256 hashes, the AST comparison that proves
+the placement seam is unchanged, and the one schema subtraction made.
+
+Placement Gate copies none of it.
+
+## What this repository contains
 
 | File | Role |
 |---|---|
-| `pgate_demo/providers.py` | named-surface resolution, lazy |
-| `pgate_demo/core.py` | session; builds upstream inputs, unpacks upstream results |
-| `pgate_demo/cli.py` | argument parsing, rendering, exit-code mapping |
+| `pgate_demo/cli.py` | argument parsing, output rendering, exit-code mapping |
+| `pgate_demo/core.py` | session; builds inputs for the core, unpacks its results |
+| `pgate_demo/providers.py` | named capability resolution over the installed dependency |
 | `pgate_demo/exit_codes.py` | the documented contract |
-| `pgate_demo/selftest.py` | conformance checks against the bound surfaces |
-| `pgate_demo/pgate.providers.json` | empty search-path list + documentation |
+| `pgate_demo/selftest.py` | deterministic checks, plus an opt-in live load |
 | `tests/test_pgate.py` | 46 adapter tests |
-| `README.md`, `LICENSE`, `docs/*`, `pyproject.toml` | packaging and documentation |
 
-The only local computation over upstream data is `fully_gpu_resident`, a boolean
-rendering of two observed byte counts. It is a presentation helper; the
-placement decision is upstream's. A test scans the adapter for budget
-arithmetic and verdict literals to keep it that way.
+Zero lines of `wyrd_placement_core` are copied here.
 
-## Three adaptations, and why
+## The migration (2026-09-30, this release)
 
-Each is at the call site, documented where it occurs, and removable.
+**Before.** Placement Gate bound to an internal `ollama_controller` package by
+path, at runtime, through `PGATE_UPSTREAM_PATH`, with `pgate.providers.json`
+holding an empty `search_paths` list. It shipped no upstream bytes and therefore
+needed no license — and consequently **could not be run by anyone who did not
+already have the internal source tree**, which is most of the audience a public
+demo exists for.
 
-### 1. Model identity comes from the plan, not the model
+**After.** One ordinary dependency on `wyrd-placement-core`.
 
-`ModelProfile` carries sizing metadata — digest, family, quantization, observed
-bytes. It has no model tag, no context window and no keep-alive. The plan does
-carry all three. So the load profile is built from `plan.model_id` and
-`plan.requested_context_tokens`, and identity therefore cannot diverge between
-the request, the observation and the plan hash.
+### What changed in the code
 
-### 2. `--num-gpu` is passed through, not interpreted
+| Before | After |
+|---|---|
+| `PGATE_UPSTREAM_PATH` / `PGATE_<NAME>_PATH` | declared in `pyproject.toml` |
+| `pgate.providers.json` with an empty search list | deleted; resolution is a named import |
+| `Controller.place_and_load_model()` | `PlacementRunner.place_and_load_model()` |
+| `controller.create_session()` + `bind_identity()` | `session_id` / `identity_id` strings |
+| a private module for the characteristics registry | an explicit **unverified** JSON read |
 
-Ollama reads a small `num_gpu` as a **layer** count. Live evidence on the
-development machine:
+That last row deserves a note, because it is the one place where behaviour is
+not a straight delegation.
 
-| `--num-gpu` | observed `size_vram` | verdict |
-|---:|---|---|
-| 1 | 0.64 GiB of 2.88 GiB | refused: not GPU residency |
-| 0 | 0 | CPU-resident |
-| 99 | 2.30 GiB of 2.30 GiB | verified |
-| -1 | 2.30 GiB of 2.30 GiB | verified, but rejected upstream by the policy validator |
+### The characteristics registry
 
-Placement Gate passes the operator's value through unchanged and lets
-verification judge the result. The alternative — remapping values to suit
-Ollama — would put placement policy in the adapter, which is the one thing this
-package must not do.
+The internal registry reader lived in `ollama_controller.registries.model_characteristics`,
+which was not extracted — it is an optional subsystem and its own verifier
+currently rejects its state.
 
-### 3. Residency is released through an admitted operation
+So `census --registry-root` now reads the JSON document directly and **says so in
+the payload**:
 
-Releasing a model needs `keep_alive=0`. The obvious call is
-`POST /api/generate`, and the upstream chat adapter **refuses** it: it admits
-exactly `GET /api/tags`, `GET /api/ps` and `POST /api/chat`. That refusal is the
-system working.
-
-Placement Gate uses the admitted operation instead:
-
-```python
-adapter._request("POST", "/api/chat",
-                 {"model": tag, "messages": [], "stream": False, "keep_alive": 0})
+```
+UNVERIFIED. These counts are read from the document as supplied; no digest or
+integrity check was performed, because the registry's own verifier is not part of
+the public placement core.
 ```
 
-An empty message list with `keep_alive=0` releases the model without generating.
-Confirmed live: the service returns `"done_reason": "unload"` and `/api/ps`
-empties. A test asserts `/api/generate` appears nowhere in the adapter's
-executable code.
+A reader that skipped the digest check while looking like the real one would be
+worse than no reader. Placement never consults the registry: a plan comes from
+measured hardware and observed model facts, which is a different kind of claim.
 
-## Upstream code that was repaired before packaging
+## The eight semantics that were preserved
 
-Placement Gate packages a repaired path. The repair is recorded here because the
-demo's central claim depends on it.
+These are what the demo claims, and what `wyrd-placement-core` had to carry
+across intact. Each was re-verified live after the migration (see
+[`docs/DEMO-NOTES.md`](DEMO-NOTES.md)):
 
-`Controller.place_and_load_model()` had never executed. Its first statement
-imported a symbol from the wrong module, and five further names were referenced
-but never imported. No test called the method; the 14 existing placement tests
-exercise the planning functions and bypass it.
+1. an over-budget model is refused **before** any load request
+2. unknown hardware fails closed
+3. the load actually happens, through the admitted backend operation
+4. residency is observed **after** the load
+5. the required residency is checked against what was requested
+6. partial residency is rejected when full residency was required
+7. identity binds to the planned digest, not the tag
+8. a domain refusal is exit 0, distinct from a process failure
 
-Repaired in `Ollama_Controller` on 2026-09-30, in the runtime seam only:
+## Third-party material
 
-- 8 unresolved imports/names corrected to their authoritative modules
-- 7 further defects proven by live execution and fixed: a wrong ledger call
-  signature, a raw connection passed where a transaction handle is required, an
-  illegal visibility value, a nonexistent keyword argument, three field reads
-  from a class that has none of them, and — the substantive one — **the method
-  performed no load at all**, reading `/api/ps` and hoping.
-- a digest-identity check added at the observation site, closing a gap the
-  method's own comment declared but the code did not implement
-- `tests/test_placement_runtime.py` added: 10 method-level tests
+None. `pgate_demo` imports only the standard library and `wyrd_placement_core`.
+No vendored directories, no embedded upstream code, no model weights, no
+internal corpora.
 
-Full record: `Ollama_Controller/RESOURCE_AWARE_PLACEMENT_VERIFICATION.md`.
+## Licensing
 
-**No planner semantics were changed.** `policy/inference_placement.py`,
-`hardware/`, `core/`, `backends/` and `ledger/` were not touched.
+- **Placement Gate:** MIT. See [`LICENSE`](../LICENSE).
+- **wyrd-placement-core:** Apache-2.0, by operator decision.
 
-## What this repository does not redistribute
+No license file was added to, or modified in, any internal source repository as
+part of the extraction or this migration. The internal trees remain unlicensed;
+the grant covers the extracted public work.
 
-- any upstream source
-- any model weights, GGUF files, or blobs
-- any ledger, corpus, or machine-specific state
-- any characteristics registry data
+## What is deliberately absent
 
-`pgate census` reads the local service at runtime and reports what it finds. It
-does not cache, persist, or transmit it.
+| Not shipped | Why |
+|---|---|
+| any `ollama_controller` module | not needed by anything here |
+| the internal controller's other 58 methods | memory lanes, checkpoints, authorization chains |
+| model weights, ledgers, machine state | nothing local is version-controlled |
+| the characteristics registry | optional, unverifiable without its private verifier |
 
-## Licensing status
-
-This repository's code: MIT.
-
-`ollama_controller`: not published on PyPI as of 2026-09-30, and no license file
-in its source tree. The Model Characteristics Registry carries no license file
-either.
-
-Nothing upstream is redistributed, so publication requires no grant. But absent a
-license that code is all-rights-reserved by default, so this repository has no
-durable right to depend on it. See `docs/LICENSING.md`.
-
-## Verifying these claims
-
-```console
-$ pgate doctor
-```
-
-`doctor` prints, per capability, the module name and the resolution source. That
-is the receipt for the whole of this document.
+History was not rewritten. The adapter-only release remains in the log, so the
+earlier decision and its reversal are both auditable.
