@@ -38,7 +38,7 @@ from pgate_demo.providers import (
 )
 from pgate_demo.selftest import FIXTURE_FACTS, run_selftest
 
-CORE = "wyrd_placement_core"
+CORE = "pgate_demo.placement"
 TRIPLE = '"' * 3
 NEWLINE = chr(10)
 
@@ -49,7 +49,7 @@ def upstream_available() -> bool:
 
 needs_upstream = pytest.mark.skipif(
     not upstream_available(),
-    reason="wyrd-placement-core is not installed",
+    reason="the placement primitives are unavailable",
 )
 
 
@@ -96,20 +96,34 @@ def _code_only(source: str) -> str:
 
 
 def test_version_exported() -> None:
-    assert PGATE_VERSION == "0.1.0"
+    assert PGATE_VERSION == "0.3.0"
 
 
-def test_console_script_is_declared_and_depends_only_on_the_public_core() -> None:
+def test_console_script_is_declared_and_depends_on_nothing_local() -> None:
+    """No git dependency, no Wyrd Flux package. pydantic or nothing.
+
+    A cross-repository git URL pins to a branch rather than a version, and this
+    package has exactly one consumer, so there is nothing to justify it.
+    """
     import tomllib
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent
     data = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     assert data["project"]["scripts"]["pgate"] == "pgate_demo.cli:main"
-    assert len(data["project"]["dependencies"]) == 1
-    only = data["project"]["dependencies"][0]
-    assert only.startswith("wyrd-placement-core"), only
-    assert "git+https://github.com/Wyrd-Flux/wyrd-placement-core" in only
+    assert data["project"]["dependencies"] == ["pydantic>=2.0"]
+
+
+def test_no_other_wyrd_flux_package_is_required() -> None:
+    """The fold must not leave a transitive dependency behind."""
+    import sys
+
+    import pgate_demo  # noqa: F401
+    from pgate_demo.providers import resolve_providers
+
+    resolve_providers()
+    others = [m for m in sys.modules if m.startswith("wyrd_")]
+    assert others == [], others
 
 
 def test_no_search_path_configuration_survives() -> None:
@@ -129,7 +143,7 @@ def test_no_search_path_configuration_survives() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_every_capability_names_a_module_in_the_public_core() -> None:
+def test_every_capability_names_a_module_inside_this_package() -> None:
     for name, (module, required) in REQUIREMENTS.items():
         assert module, f"{name} names no module"
         assert required, f"{name} declares no required attribute"
@@ -139,13 +153,13 @@ def test_every_capability_names_a_module_in_the_public_core() -> None:
 
 
 def test_import_binds_nothing() -> None:
-    """Importing the adapter must not import the upstream package."""
+    """Importing the CLI must not import the placement primitives."""
     import subprocess
     import sys
 
     code = (
         "import sys, pgate_demo, pgate_demo.providers;"
-        "print([m for m in sys.modules if m.startswith('wyrd_placement_core')])"
+        "print([m for m in sys.modules if m.startswith('pgate_demo.placement')])"
     )
     out = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, timeout=180
@@ -247,7 +261,7 @@ def test_unreachable_service_is_distinct_from_a_refusal(
     The provider IS resolvable here; only the transport fails. Conflating the
     three would make a stopped service look like a missing dependency.
     """
-    import wyrd_placement_core.backends.chat as chat_mod
+    import pgate_demo.placement.backends.chat as chat_mod
 
     class _Dead:
         def __init__(self, **kwargs):
@@ -468,8 +482,8 @@ def test_load_is_attempted_and_observation_follows_it(
     If residency were observed before the load, every verdict would be
     meaningless, and no amount of correct arithmetic would catch it.
     """
-    from wyrd_placement_core.backends.chat import OllamaChatAdapter
-    from wyrd_placement_core.controller.placement import PlacementRunner
+    from pgate_demo.placement.backends.chat import OllamaChatAdapter
+    from pgate_demo.placement.controller.placement import PlacementRunner
 
     session = PlacementGateSession()
     planned = session.plan(FIXTURE_FACTS, placement="DEVICE_ONLY", num_gpu=99)
@@ -509,7 +523,7 @@ def test_load_is_attempted_and_observation_follows_it(
     monkeypatch.setattr(PlacementRunner, "place_and_load_model", fake_place_and_load)
     monkeypatch.setattr(OllamaChatAdapter, "_request", _FakeAdapter()._request, raising=False)
     monkeypatch.setattr(
-        "wyrd_placement_core.backends.chat.OllamaChatAdapter", _FakeAdapter
+        "pgate_demo.placement.backends.chat.OllamaChatAdapter", _FakeAdapter
     )
 
     outcome = session.place(planned, unload_after=False)
@@ -532,7 +546,7 @@ def test_partial_residency_is_not_rounded_up(
     This is the live finding the demo exists to preserve: requesting full
     offload and getting one layer back is a refusal, not a success.
     """
-    import wyrd_placement_core.backends.chat as chat_mod
+    import pgate_demo.placement.backends.chat as chat_mod
 
     cases = [
         # name, size, size_vram, expected fully_gpu_resident
@@ -686,27 +700,66 @@ def test_unreadable_registry_is_reported_not_repaired_or_hidden() -> None:
         assert word not in rendered
 
 
-def test_no_shipped_file_names_the_private_package() -> None:
-    """Regression guard for the migration.
+def test_no_shipped_file_names_the_private_package_in_executable_code() -> None:
+    """Regression guard for both migrations.
 
-    Stale prose is how a private dependency creeps back in: a docstring is not
-    load-bearing, so nothing fails when one lies. This makes it fail.
+    Two ways a private dependency creeps back in. Stale prose: a docstring is not
+    load-bearing, so nothing fails when one lies. And a real import, in a file
+    that now lives inside this package where a reviewer might not look twice.
+
+    So this tokenises every shipped file and scans only the code. The folded-in
+    primitives discuss these names at length -- in docstrings, in comments, and
+    in provenance notes -- and that prose is correct and must not trip this.
     """
+    import io
     import re
+    import tokenize
     from pathlib import Path
 
     package = Path(__file__).resolve().parent.parent / "pgate_demo"
-    pattern = re.compile(r"ollama_controller|Ollama_Controller|PGATE_UPSTREAM_PATH")
-    offenders = [
-        f"{path.name}:{lineno}"
-        for path in sorted(package.rglob("*.py"))
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
-        if pattern.search(line)
-    ]
+    pattern = re.compile(r"ollama_controller|PGATE_UPSTREAM_PATH|wy rd")
+    offenders = []
+    for path in sorted(package.rglob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        try:
+            tokens = [
+                t for t in tokenize.generate_tokens(io.StringIO(source).readline)
+                if t.type not in (tokenize.STRING, tokenize.COMMENT)
+            ]
+        except tokenize.TokenError:  # pragma: no cover - would fail the suite
+            offenders.append(f"{path.name}: unparseable")
+            continue
+        executable = " ".join(t.string for t in tokens)
+        if pattern.search(executable):
+            offenders.append(path.name)
     assert offenders == [], offenders
 
 
-def test_the_dependency_is_declared_and_is_the_public_core() -> None:
+def test_no_absolute_path_from_the_extraction_estate_is_executable() -> None:
+    """The primitives mention no machine path in code, only in documentation."""
+    import io
+    import re
+    import tokenize
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parent.parent / "pgate_demo" / "placement"
+    drive = re.compile(r"[A-Za-z]:[\/]|/Users/|/home/[a-z]")
+    offenders = []
+    for path in sorted(package.rglob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        try:
+            tokens = [
+                t.string for t in tokenize.generate_tokens(io.StringIO(source).readline)
+                if t.type not in (tokenize.STRING, tokenize.COMMENT)
+            ]
+        except tokenize.TokenError:  # pragma: no cover
+            continue
+        if drive.search(" ".join(tokens)):
+            offenders.append(path.name)
+    assert offenders == [], offenders
+
+
+def test_the_only_dependency_is_pydantic() -> None:
     import tomllib
     from pathlib import Path
 
@@ -715,6 +768,4 @@ def test_the_dependency_is_declared_and_is_the_public_core() -> None:
             encoding="utf-8"
         )
     )
-    deps = data["project"]["dependencies"]
-    assert len(deps) == 1, deps
-    assert deps[0].startswith("wyrd-placement-core"), deps[0]
+    assert data["project"]["dependencies"] == ["pydantic>=2.0"]

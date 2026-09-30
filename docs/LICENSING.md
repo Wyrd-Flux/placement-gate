@@ -6,11 +6,11 @@ Recorded 2026-09-30, and updated for the migration to a public core.
 
 | Component | License | Where |
 |---|---|---|
-| Placement Gate | **MIT** | [`LICENSE`](../LICENSE) |
-| `wyrd-placement-core` | **Apache-2.0** | its own `LICENSE`, at its own repository |
+| Placement Gate, including `pgate_demo/placement/` | **MIT** | [`LICENSE`](../LICENSE) |
+| `wyrd-placement-core` (archived, retained) | was **Apache-2.0** | its own `LICENSE`, at its own repository |
 
-Placement Gate depends on the placement core through ordinary packaging. Nothing
-private is redistributed by either repository.
+Placement Gate declares one dependency, `pydantic`. Nothing private is
+redistributed, and nothing cross-repository is required to run it.
 
 ## The change, and why it was necessary
 
@@ -34,9 +34,19 @@ placement seam is unchanged.
 `Ollama_Controller` remains unlicensed and unmodified. The Apache-2.0 grant
 covers the extracted public work.
 
-**Did not:** fabricate history. Both migrations were new commits; the
-adapter-only releases remain in the git logs, so the earlier decision and its
-reversal are both auditable.
+**Did not:** fabricate history. All three stages are new commits. The adapter-only
+release, the separate-core release, and this fold are all present in the git log,
+so each decision and its reversal are auditable.
+
+**Did not:** delete the core repository. `wyrd-placement-core` is archived and
+retained; its commit history and provenance records remain readable.
+
+**Did not:** weaken the grant. The primitives were Apache-2.0 as a separate package
+and are MIT here. Both are grants of the same code by the same rights holder, and
+MIT is the more permissive of the two.
+
+**Did not:** add a license upstream. `Ollama_Controller` had no license file at any
+point in this work, and still has none.
 
 ## The one non-delegation
 
@@ -80,6 +90,7 @@ is deliberate — the code meant to be depended upon gets the stronger grant.
 | the internal controller's other 58 methods | memory lanes, checkpoints, authorization chains |
 | model weights, ledgers, machine state | nothing local is version-controlled |
 | the characteristics registry | optional, unverifiable without its private verifier |
+| 22 unreferenced ledger tables | declared but never used by any method |
 
 Nothing in either repository is licensed that was not extracted deliberately, and
 nothing extracted is left unlicensed.

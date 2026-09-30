@@ -10,7 +10,7 @@ which claims were actually executed rather than argued.
 | GPU | NVIDIA GeForce RTX 3070 Laptop GPU, 8.0 GiB VRAM |
 | Host RAM | 63.82 GiB |
 | Service | Ollama at `127.0.0.1:11434`, 44 models |
-| Dependency | `wyrd-placement-core` 0.1.0 from GitHub |
+| Dependency | `pydantic` only |
 | Private estate | **not required, and not consulted** |
 | Models present | 44 |
 | Upstream | `Ollama_Controller/src` working tree, repaired seam |
@@ -54,7 +54,7 @@ request.
 
 This is the claim the demo exists for.
 
-Re-verified live **after** the migration to `wyrd-placement-core`:
+Re-verified live **after** the fold, against the code as it stands:
 
 ```console
 $ pgate --text place tinyllama:1.1b --keep-alive 20s --unload-after
@@ -119,9 +119,9 @@ to destroy. Placement Gate reports the residency so it is visible.
 ## Claim 6 — a missing capability produces no answer
 
 ```console
-$ # with wyrd-placement-core uninstalled, the import fails at module load and
-$ # pgate refuses to start rather than answering from a substitute
-ModuleNotFoundError: No module named 'wyrd_placement_core'
+$ # with the placement primitives unavailable, the import fails at module load
+$ # and pgate refuses to start rather than answering from a substitute
+ModuleNotFoundError: evidence primitives unavailable
 ```
 
 No plan, no estimate, no fallback. Pinned by four tests, one asserting the

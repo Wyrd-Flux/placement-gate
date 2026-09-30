@@ -3,11 +3,10 @@
 **This machine has a finite hardware budget. Placement Gate can inspect that budget, refuse a model that will not fit, load one that should fit, and then verify that the expected model actually became resident under the expected identity.**
 
 Placement Gate is a small command-line application assembled almost entirely
-from capability that already exists upstream. It binds to the
-`wyrd-placement-core` package and **reimplements none of it** — no
-placement policy, no budget arithmetic, no verification rule. Every refusal and
-every verdict printed here was decided upstream and is reported with the
-upstream's own reason string.
+from capability that already exists in its own `pgate_demo/placement/`. The CLI
+**reimplements none of it** — no placement policy, no budget arithmetic, no
+verification rule. Every refusal and every verdict printed here was decided by
+those primitives and is reported with their own reason string.
 
 ```console
 $ pgate hardware
@@ -66,16 +65,17 @@ $ .venv/bin/pgate hardware
 ```
 
 That is the whole setup. The placement policy, hardware observation, the Ollama
-adapter, the ledger and the verified load seam come from
-[`wyrd-placement-core`](https://github.com/Wyrd-Flux/wyrd-placement-core), an
-ordinary installed dependency:
+adapter, the ledger and the verified load seam are files under
+[`pgate_demo/placement/`](pgate_demo/placement), not a package you have to resolve
+first:
 
 ```
-placement-gate → wyrd-placement-core → pydantic → Python stdlib
+placement-gate → pydantic → Python stdlib
 ```
 
-No environment variables, no source-tree bindings, no access to anything private.
-Python 3.11 or newer, and `pip` with network access to GitHub.
+**One dependency** (`pydantic`, for the validated model types) and nothing else.
+No environment variables, no source-tree bindings, no access to anything private,
+and no other Wyrd Flux package. Python 3.11 or newer.
 
 Live commands additionally need a running Ollama. `hardware`, `doctor`,
 `exit-codes` and `selftest` (without `--live`) do not.
@@ -319,7 +319,7 @@ implements it.
 
 ```console
 $ python -m pytest -q
-48 passed
+95 passed
 ```
 
 The suite asserts that this package **delegates**. It checks that the adapter

@@ -6,31 +6,41 @@ Copyright (c) 2026 Placement Gate contributors
 
 DISTRIBUTION SHAPE
 
-Placement Gate depends on wyrd-placement-core, a separate public package
-licensed under Apache-2.0:
+Placement Gate is self-contained. Its only runtime dependency is pydantic:
 
-    https://github.com/Wyrd-Flux/wyrd-placement-core
+    git clone https://github.com/Wyrd-Flux/placement-gate
+    python -m venv .venv && .venv/bin/pip install .
 
-That dependency is installed normally by pip. Placement Gate copies none of it
-and grants no rights in it; see its own LICENSE for the terms that apply to it.
-
-Placement Gate ships no private corpus, no model weights, no ledgers and no
-internal source tree. It is runnable by anyone with Python 3.11, network access
-to GitHub, and -- for live placement -- a running Ollama.
+The placement primitives -- hardware observation, model profile, placement
+planning and admission, the Ollama adapter, the ledger, and the verified load
+seam -- are files under pgate_demo/placement/. Nothing else is needed. No
+environment variables, no source-tree bindings, no private corpus, no cross-
+repository dependency.
 
 --------------------------------------------------------------------------
 
-DERIVED WORK: PROVENANCE
+HISTORY: THIS CODE WAS ONCE A SEPARATE PACKAGE
 
-Placement Gate's placement primitives were extracted from an internal source
-repository for the public release. The extraction, the exact source paths and
-SHA-256 hashes, the AST comparison proving the placement seam is unchanged, and
-the one schema subtraction are recorded in docs/PROVENANCE.md and in
-wyrd-placement-core's own PROVENANCE.md.
+The placement primitives were extracted from an internal source repository for
+the public release, published first as a separate Apache-2.0 package
+(Wyrd-Flux/wyrd-placement-core), and then folded into this repository when it
+became clear that package had exactly one consumer.
 
-No license file was added to, or modified in, any internal source repository as
-part of that extraction or of the migration. The internal trees remain
-unlicensed; the grant covers the extracted public work.
+That repository was archived, not deleted. Its commit history, its own
+PROVENANCE.md, and the AST comparison proving the placement seam is unchanged all
+remain readable. This repository's git history was not rewritten either: the
+adapter-only release and the separate-core release are both still present.
+
+For code moved into pgate_demo/placement/, docs/PROVENANCE.md records:
+
+  * the original internal source path for each file
+  * the source SHA-256 for each file
+  * the public core commit the code passed through
+  * the extraction changes, including the one schema subtraction
+  * the AST comparison proving the seam is byte-equivalent in logic
+  * authorship counts and the absence of any upstream license file
+
+--------------------------------------------------------------------------
 
 --------------------------------------------------------------------------
 

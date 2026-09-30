@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "placement-gate"
-version = "0.2.0"
+version = "0.3.0"
 description = "Resource-aware model placement: refuse what will not fit, load what should, and verify what actually ran."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,12 +18,11 @@ classifiers = [
   "Topic :: System :: Hardware",
 ]
 
-# The placement policy, hardware observation, Ollama adapter, ledger and the
-# verified load seam come from wyrd-placement-core. GitHub-only distribution in
-# this phase, so the requirement is a direct reference rather than a PyPI name.
-dependencies = [
-  "wyrd-placement-core @ git+https://github.com/Wyrd-Flux/wyrd-placement-core.git",
-]
+# The only runtime dependency is pydantic, for the validated model types. The
+# placement policy, hardware observation, Ollama adapter, ledger and the verified
+# load seam are folded into pgate_demo.placement, so a clone is runnable on its
+# own with nothing else installed.
+dependencies = ["pydantic>=2.0"]
 
 [project.scripts]
 pgate = "pgate_demo.cli:main"
@@ -31,7 +30,6 @@ pgate = "pgate_demo.cli:main"
 [project.urls]
 Homepage = "https://github.com/Wyrd-Flux/placement-gate"
 Source = "https://github.com/Wyrd-Flux/placement-gate"
-PlacementCore = "https://github.com/Wyrd-Flux/wyrd-placement-core"
 
 [tool.setuptools.packages.find]
 include = ["pgate_demo*"]

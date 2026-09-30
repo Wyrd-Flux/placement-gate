@@ -23,7 +23,7 @@ from .exit_codes import (
 from .providers import CapabilityUnavailable, ProviderSet, resolve_providers
 
 GIB = 1024 ** 3
-PGATE_VERSION = "0.1.0"
+PGATE_VERSION = "0.3.0"
 
 #: Capabilities the planner itself needs, independent of a live server.
 PLANNING_CAPABILITIES = (

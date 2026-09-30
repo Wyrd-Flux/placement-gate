@@ -30,7 +30,7 @@ exactly what is delegated and what — almost nothing — is local.
                     └───────────────┬──────────────────────┘
                                        │
                     ┌──────────────────▼─────────────────────┐
-                    │       wyrd-placement-core (public)       │
+                    │   pgate_demo.placement (self-contained)  │
                     │                                         │
                     │  hardware/{facts,observer,windows_      │
                     │            memory,nvidia_query}         │
@@ -40,6 +40,8 @@ exactly what is delegated and what — almost nothing — is local.
                     │  ledger/{ledger,models,residency}       │
                     │  controller/placement       <- the seam  │
                     │  topology                                │
+                    │                                         │
+                    │  no dependencies but pydantic            │
                     └─────────────────────────────────────────┘
 ```
 
@@ -50,7 +52,7 @@ exactly what is delegated and what — almost nothing — is local.
 | `observe_hardware` | `hardware.observer.RealHardwareObserver` + `windows_memory` + `nvidia_query` | what the machine has, and whether the evidence is contradictory |
 | `census` | `backends.chat.OllamaChatAdapter` (admitted GETs) | which models the service offers |
 | `plan` | `policy.inference_placement.plan_inference_placement` | whether a model fits, in which topology, with which reason |
-| `place` | `controller.placement.PlacementRunner.place_and_load_model` | the whole lifecycle, including whether to keep the model loaded |
+| `place` | `placement/controller/placement.py` → `PlacementRunner.place_and_load_model` | the whole lifecycle, including whether to keep the model loaded |
 | `observe_residency` | the service's `/api/ps`, decoded as raw evidence | nothing — it reports |
 | `unload` | the adapter's admitted `POST /api/chat` with `keep_alive=0` | nothing — it is an explicit request |
 | `characteristics` | **nothing** — an explicit unverified JSON read | nothing; the payload carries `verified: false` |
@@ -94,7 +96,7 @@ report `VERIFIED`.
 
 **Eager import.** `import pgate_demo` imports no core module. Resolution is
 lazy: each capability is resolved on first use. A test asserts that importing
-the package leaves `sys.modules` free of `wyrd_placement_core`, and another asserts
+the package leaves `sys.modules` free of `pgate_demo.placement`, and another asserts
 the provider layer contains no `os.walk`, `pkgutil`, `glob` or `scandir`.
 
 This is not squeamishness. The estate this demo is drawn from contains a
@@ -122,8 +124,9 @@ all.
 - **No implicit cleanup.** `place` leaves the model loaded. `--unload-after` is
   the only path that releases it, and it says so.
 - **No machine paths in version control, and nowhere they could go.**
-  `pgate.providers.json` is deleted; resolution is a named import of a declared
-  dependency, so there is no file left in which a local path could be recorded.
+  `pgate.providers.json` is deleted; resolution is a named import of a module
+  inside this package, so there is no file left in which a local path could be
+  recorded.
 - **No private data in output.** Private payload keys are stripped before
   rendering. `census` reports tag, digest, size, context, parameters,
   quantization and residency — and nothing else.

@@ -1,9 +1,9 @@
-"""Providers for Placement Gate's evidence primitives.
+"""Providers for Placement Gate's placement primitives.
 
-Everything Placement Gate needs now comes from ``wyrd-placement-core``, an
-ordinary installed dependency, so there is nothing to resolve and nothing to fail
-to resolve. This module is a thin compatibility seam over that package rather
-than a plugin system.
+The primitives live in :mod:`pgate_demo.placement`, folded into this repository, so
+there is nothing to resolve across a package boundary and nothing to fail to
+resolve. This module is a thin reporting seam over those files rather than a
+plugin system.
 
 It exists for one reason: the reporting vocabulary. Every command reports which
 capability it used and whether it was available, and that shape is part of
@@ -13,7 +13,7 @@ exit non-zero rather than answer from a substitute.
 Two rules this module keeps, because they were the point of the original:
 
 - **Resolution is by name, never by scanning.** No ``os.walk``, no ``pkgutil``, no
-  globbing. The dependency graph in ``pyproject.toml`` is the whole truth.
+  globbing. Each capability names one module inside this package.
 - **A missing capability produces ``UNAVAILABLE``, never a plausible answer.**
 """
 
@@ -34,7 +34,7 @@ class CapabilityUnavailable(RuntimeError):
         self.detail = detail
 
 
-#: capability name -> (dotted module inside wyrd_placement_core, attributes)
+#: capability name -> (dotted module inside pgate_demo.placement, attributes)
 REQUIREMENTS: dict[str, tuple[str, tuple[str, ...]]] = {
     "hardware_facts": ("hardware.facts", ("HardwareProfile", "MemoryFact", "DetectionStatus")),
     "hardware_observer": ("hardware.observer", ("RealHardwareObserver",)),
@@ -107,7 +107,7 @@ class ProviderSet:
         provider = self.resolutions.get(capability)
         if provider is None:
             raise CapabilityUnavailable(
-                capability, "not a declared capability of wyrd-placement-core"
+                capability, "not a declared capability of pgate_demo.placement"
             )
         if not provider.ok:
             raise CapabilityUnavailable(capability, provider.detail)
@@ -115,9 +115,9 @@ class ProviderSet:
 
 
 def resolve_providers(capabilities: tuple[str, ...] | None = None) -> ProviderSet:
-    """Resolve capabilities from the installed dependency.
+    """Resolve capabilities from the primitives folded into this package.
 
-    Resolution is a named import of ``wyrd_placement_core.<module>``. Nothing is
+    Resolution is a named import of ``pgate_demo.placement.<module>``. Nothing is
     discovered, enumerated or searched.
     """
     import importlib
@@ -125,7 +125,7 @@ def resolve_providers(capabilities: tuple[str, ...] | None = None) -> ProviderSe
     resolutions: dict[str, Provider] = {}
     for name in (capabilities or tuple(REQUIREMENTS)):
         dotted, attributes = REQUIREMENTS[name]
-        module_name = f"wyrd_placement_core.{dotted}"
+        module_name = f"pgate_demo.placement.{dotted}"
         try:
             module = importlib.import_module(module_name)
         except Exception as exc:  # noqa: BLE001 - reported, never substituted
@@ -144,7 +144,7 @@ def resolve_providers(capabilities: tuple[str, ...] | None = None) -> ProviderSe
             detail=(
                 f"missing attributes: {', '.join(missing)}"
                 if missing
-                else "wyrd-placement-core"
+                else "pgate_demo.placement"
             ),
         )
     return ProviderSet(resolutions=resolutions)
