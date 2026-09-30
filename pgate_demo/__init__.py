@@ -1,7 +1,8 @@
-"""Placement Gate: a thin adapter over the upstream Ollama_Controller placement path.
+"""Placement Gate: a CLI over wyrd-placement-core.
 
-This package contains no placement policy. It resolves named upstream
-capabilities lazily, builds upstream inputs, and reports upstream results.
+This package contains no placement policy. It resolves named capabilities of the
+installed core lazily, builds the core's inputs, and reports the core's results
+with its own reason strings.
 """
 
 from .core import PGATE_VERSION, PlacementGateSession, Status

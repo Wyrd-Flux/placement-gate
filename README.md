@@ -319,7 +319,7 @@ implements it.
 
 ```console
 $ python -m pytest -q
-46 passed
+48 passed
 ```
 
 The suite asserts that this package **delegates**. It checks that the adapter

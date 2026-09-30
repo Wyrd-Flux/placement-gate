@@ -30,7 +30,7 @@ Placement Gate copies none of it.
 | `pgate_demo/providers.py` | named capability resolution over the installed dependency |
 | `pgate_demo/exit_codes.py` | the documented contract |
 | `pgate_demo/selftest.py` | deterministic checks, plus an opt-in live load |
-| `tests/test_pgate.py` | 46 adapter tests |
+| `tests/test_pgate.py` | 48 adapter tests |
 
 Zero lines of `wyrd_placement_core` are copied here.
 

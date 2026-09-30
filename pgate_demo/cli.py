@@ -445,8 +445,8 @@ def build_parser() -> argparse.ArgumentParser:
             "expected model became resident under the expected identity."
         ),
         epilog=(
-            "This tool delegates every decision to the upstream Ollama_Controller "
-            "implementation. It contains no placement policy of its own."
+            "Every decision is delegated to wyrd-placement-core. This tool "
+            "contains no placement policy of its own."
         ),
     )
     parser.add_argument("--version", action="version", version=PGATE_VERSION)

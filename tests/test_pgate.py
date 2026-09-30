@@ -684,3 +684,37 @@ def test_unreadable_registry_is_reported_not_repaired_or_hidden() -> None:
     # it must never claim to have read state it could not verify
     for word in ("families", "observations"):
         assert word not in rendered
+
+
+def test_no_shipped_file_names_the_private_package() -> None:
+    """Regression guard for the migration.
+
+    Stale prose is how a private dependency creeps back in: a docstring is not
+    load-bearing, so nothing fails when one lies. This makes it fail.
+    """
+    import re
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parent.parent / "pgate_demo"
+    pattern = re.compile(r"ollama_controller|Ollama_Controller|PGATE_UPSTREAM_PATH")
+    offenders = [
+        f"{path.name}:{lineno}"
+        for path in sorted(package.rglob("*.py"))
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if pattern.search(line)
+    ]
+    assert offenders == [], offenders
+
+
+def test_the_dependency_is_declared_and_is_the_public_core() -> None:
+    import tomllib
+    from pathlib import Path
+
+    data = tomllib.loads(
+        (Path(__file__).resolve().parent.parent / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    deps = data["project"]["dependencies"]
+    assert len(deps) == 1, deps
+    assert deps[0].startswith("wyrd-placement-core"), deps[0]
